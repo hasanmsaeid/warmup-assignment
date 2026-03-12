@@ -306,7 +306,54 @@ function getTotalActiveHoursPerMonth(textFile, driverID, month) {
 // ============================================================
 function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, month) {
 
+    let shifts = fs.readFileSync(textFile,"utf8").trim().split("\n");
+    let rates = fs.readFileSync(rateFile,"utf8").trim().split("\n");
 
+    let dayOff = "";
+
+    for(let line of rates){
+        let parts = line.split(",");
+        if(parts[0].trim() === driverID){
+            dayOff = parts[1].trim();
+            break;
+        }
+    }
+
+    let dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    let totalSeconds = 0;
+
+    for(let line of shifts){
+
+        let parts = line.split(",");
+        if(parts.length < 10) continue;
+
+        let id = parts[0].trim();
+        let dateStr = parts[2].trim();
+        let recordMonth = parseInt(dateStr.split("-")[1]);
+
+        if(id === driverID && recordMonth === month){
+
+            let weekday = dayNames[new Date(dateStr).getDay()];
+
+            if(weekday.toLowerCase() === dayOff.toLowerCase()) continue;
+
+            if(dateStr >= "2025-04-10" && dateStr <= "2025-04-30"){
+                totalSeconds += 6*3600;
+            } else {
+                totalSeconds += 8*3600 + 24*60;
+            }
+        }
+    }
+
+    totalSeconds -= bonusCount * 2 * 3600;
+    totalSeconds = Math.max(0,totalSeconds);
+
+    let hours = Math.floor(totalSeconds/3600);
+    totalSeconds %= 3600;
+    let minutes = Math.floor(totalSeconds/60);
+    let seconds = totalSeconds % 60;
+
+    return `${hours}:${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}`;
 }
 
 // ============================================================
@@ -319,6 +366,43 @@ function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, mont
 // ============================================================
 function getNetPay(driverID, actualHours, requiredHours, rateFile) {
 
+    let data = fs.readFileSync(rateFile,"utf8").trim().split("\n");
+
+    let salary = 0;
+
+    for(let line of data){
+        let parts = line.split(",");
+
+        if(parts[0] === "DriverID") continue;
+
+        if(parts[0] === driverID){
+            salary = parseInt(parts[2]);
+        }
+    }
+
+    function toMinutes(timeStr){
+        let parts = timeStr.split(":");
+        let h = parseInt(parts[0]);
+        let m = parseInt(parts[1]);
+        return h*60 + m;
+    }
+
+    let actual = toMinutes(actualHours);
+    let required = toMinutes(requiredHours);
+
+    let missing = required - actual;
+
+    if(missing <= 0){
+        return salary;
+    }
+
+    if(missing <= 18*60){
+        return salary;
+    }
+
+    let deduction = Math.floor(missing * 0.125);
+
+    return salary - deduction;
 }
 
 module.exports = {
